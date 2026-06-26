@@ -16,6 +16,10 @@ export class SlskdClient {
     this.baseUrl = baseUrl.replace(/\/$/, "");
   }
 
+  /**
+   * Makes an authenticated request to slskd. Suppresses 404 (returns the response)
+   * so polling callers can check res.ok; callers MUST check res.ok before using the body.
+   */
   private async req(path: string, init: RequestInit = {}): Promise<Response> {
     const res = await fetch(`${this.baseUrl}${path}`, {
       ...init,
@@ -34,6 +38,7 @@ export class SlskdClient {
   async health(): Promise<{ healthy: boolean; connected: boolean; version: string | null }> {
     let healthy = false;
     try {
+      // /health is a public, unauthenticated endpoint; intentionally bypass req() and API key.
       const h = await fetch(`${this.baseUrl}/health`);
       healthy = h.ok;
     } catch { healthy = false; }
@@ -57,12 +62,15 @@ export class SlskdClient {
     const pollMs = opts.pollMs ?? 500;
 
     const id = crypto.randomUUID();
-    const searchRes = await this.req("/api/v0/searches", {
+    const createRes = await this.req("/api/v0/searches", {
       method: "POST",
       body: JSON.stringify({ id, searchText: query }),
     });
-    const searchBody: any = await searchRes.json();
-    const searchId = searchBody?.id ?? id;
+    let searchId = id;
+    try {
+      const body: any = await createRes.json();
+      if (body?.id) searchId = body.id;
+    } catch { /* slskd returned a non-JSON/empty body; use the client-generated id */ }
 
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
