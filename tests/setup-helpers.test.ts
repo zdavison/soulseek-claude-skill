@@ -9,11 +9,17 @@ test("paths derive from home", () => {
 
 test("buildSlskdYml embeds creds, api key, downloads dir, port", () => {
   const yml = buildSlskdYml({ username: "me", password: "pw", apiKey: "SECRET123456789012", port: 5030 });
-  expect(yml).toContain("username: me");
-  expect(yml).toContain("password: pw");
+  expect(yml).toContain('username: "me"');
+  expect(yml).toContain('password: "pw"');
   expect(yml).toContain("key: SECRET123456789012");
   expect(yml).toContain("downloads: /downloads");
   expect(yml).toContain("port: 5030");
+});
+
+test("buildSlskdYml safely escapes special characters in credentials", () => {
+  const yml = buildSlskdYml({ username: "a:b", password: 'p#"x', apiKey: "K".repeat(16), port: 5030 });
+  expect(yml).toContain('username: "a:b"');
+  expect(yml).toContain('password: "p#\\"x"');
 });
 
 test("buildDockerRunArgs mounts config + downloads and maps port", () => {
