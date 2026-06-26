@@ -1,6 +1,6 @@
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
+import { CallToolRequestSchema, ListToolsRequestSchema, type Tool } from "@modelcontextprotocol/sdk/types.js";
 import { SlskdClient } from "./slskd-client";
 import { pickBest } from "./pick-best";
 import type { Candidate, Policy, TransferStatus } from "./types";
@@ -101,7 +101,7 @@ const TOOLS = [
       additionalProperties: false,
     },
   },
-];
+] satisfies Tool[];
 
 function ok(data: unknown) {
   return { content: [{ type: "text", text: JSON.stringify(data, null, 2) }] };
@@ -116,13 +116,13 @@ export function createServer(client: ClientLike): Server {
   server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: TOOLS }));
 
   server.setRequestHandler(CallToolRequestSchema, async (req) => {
-    const { name, arguments: a = {} } = req.params as any;
+    const { name, arguments: a = {} } = req.params;
     switch (name) {
       case "soulseek_health": return ok(await handleHealth(client));
-      case "soulseek_search": return ok(await handleSearch(client, a));
-      case "soulseek_download": return ok(await handleDownload(client, a));
-      case "soulseek_transfer_status": return ok(await handleStatus(client, a));
-      case "soulseek_cancel": return ok(await handleCancel(client, a));
+      case "soulseek_search": return ok(await handleSearch(client, a as Parameters<typeof handleSearch>[1]));
+      case "soulseek_download": return ok(await handleDownload(client, a as Parameters<typeof handleDownload>[1]));
+      case "soulseek_transfer_status": return ok(await handleStatus(client, a as Parameters<typeof handleStatus>[1]));
+      case "soulseek_cancel": return ok(await handleCancel(client, a as Parameters<typeof handleCancel>[1]));
       default: throw new Error(`unknown tool: ${name}`);
     }
   });

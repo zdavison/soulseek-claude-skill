@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { handleSearch, handleDownload, handleStatus } from "../src/mcp-server";
+import { handleSearch, handleDownload, handleStatus, handleCancel, handleHealth } from "../src/mcp-server";
 
 // Minimal fake client implementing only what each handler uses.
 function fakeClient(over: any = {}) {
@@ -13,6 +13,8 @@ function fakeClient(over: any = {}) {
     enqueue: async () => "tid-9",
     transferStatus: async () => ({ id: "tid-9", phase: "succeeded", rawState: "Completed, Succeeded",
       size: 100, bytesTransferred: 100, percentComplete: 100, averageSpeed: 5 }),
+    cancel: async () => undefined,
+    health: async () => ({ healthy: true, connected: true, version: "1.0.0" }),
     ...over,
   } as any;
 }
@@ -37,4 +39,18 @@ test("handleStatus passes through normalized status", async () => {
   const out = await handleStatus(fakeClient(), { username: "alice", transferId: "tid-9" });
   expect(out.phase).toBe("succeeded");
   expect(out.percentComplete).toBe(100);
+});
+
+test("handleCancel cancels with remove=true and reports cancelled", async () => {
+  const calls: any[] = [];
+  const client = fakeClient({ cancel: async (...args: any[]) => { calls.push(args); } });
+  const out = await handleCancel(client, { username: "alice", transferId: "tid-9" });
+  expect(out).toEqual({ cancelled: true });
+  expect(calls[0]).toEqual(["alice", "tid-9", true]);
+});
+
+test("handleHealth passes through client.health", async () => {
+  const client = fakeClient({ health: async () => ({ healthy: true, connected: true, version: "1.2.3" }) });
+  const out = await handleHealth(client);
+  expect(out).toEqual({ healthy: true, connected: true, version: "1.2.3" });
 });
