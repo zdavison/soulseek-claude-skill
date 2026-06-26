@@ -36,7 +36,7 @@ Use the `soulseek_*` MCP tools (backed by a local slskd instance) to find and do
    - `phase: "failed"` → stalled/rejected. Cancel is unnecessary (already terminal); go to fallback.
    - `phase: "in_progress"` but `bytesTransferred` unchanged across ~6 consecutive polls (~60s) →
      treat as stalled: call `soulseek_cancel`, then fall back.
-   - `phase: "queued"` for a long time (no movement in ~90s) → fall back.
+   - `phase: "queued"` and still queued after ~90s with no progress → `soulseek_cancel` it, then fall back.
    - **Fallback:** move to the next candidate in the list, download it, and repeat the loop.
      Never retry the same `username` you just abandoned. Cap at 5 candidates total.
 
