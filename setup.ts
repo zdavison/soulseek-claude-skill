@@ -19,8 +19,8 @@ export function generateApiKey(): string {
 
 export function buildSlskdYml(o: { username: string; password: string; apiKey: string; port: number }): string {
   return `soulseek:
-  username: ${o.username}
-  password: ${o.password}
+  username: ${JSON.stringify(o.username)}
+  password: ${JSON.stringify(o.password)}
 directories:
   downloads: /downloads
 web:
@@ -94,12 +94,18 @@ async function main() {
   const baseUrl = `http://localhost:${port}`;
 
   if (flag === "--reset") {
-    await run(["docker", "rm", "-f", "slskd"]);
-    console.log("Removed slskd container. Config left in place at", p.configFile);
+    const rm = await run(["docker", "rm", "-f", "slskd"]);
+    if (rm.code === 0) {
+      console.log("Removed slskd container. Config left in place at", p.configFile);
+    } else {
+      console.error("Could not remove slskd container (is Docker running?).", rm.stderr.trim());
+      process.exit(1);
+    }
     return;
   }
 
   if (flag === "--status") {
+    if (!(await dockerAvailable())) { console.log("Docker: not available"); return; }
     const ps = await run(["docker", "ps", "--filter", "name=slskd", "--format", "{{.Status}}"]);
     console.log("Container:", ps.stdout.trim() || "not running");
     try {
@@ -132,6 +138,10 @@ async function main() {
   console.log("Wrote", p.configFile);
 
   // 4. Launch container (recreate if present)
+  const existing = await run(["docker", "ps", "-a", "--filter", "name=^/slskd$", "--format", "{{.Names}}"]);
+  if (existing.stdout.trim() === "slskd") {
+    console.warn("A Docker container named 'slskd' already exists and will be recreated. Its container state will be lost (config/downloads on disk are preserved).");
+  }
   await run(["docker", "rm", "-f", "slskd"]);
   const launch = await run(["docker", ...buildDockerRunArgs({ configFile: p.configFile, downloadsDir: p.downloadsDir, port })]);
   if (launch.code !== 0) {
