@@ -70,3 +70,22 @@ test("every candidate has a non-empty reason string", () => {
   const r = [resp({ files: [{ filename: "song.flac", size: 27_000_000, bitRate: null, length: 240 }]})];
   expect(pickBest(r, "lossless-first")[0].reason.length).toBeGreaterThan(0);
 });
+
+test("soft-floor lossless is kept but flagged suspectFake and penalized", () => {
+  const r = [resp({ files: [
+    { filename: "suspect.flac", size: 10_500_000, bitRate: null, length: 240 }, // ~350 kbps
+  ]})];
+  const out = pickBest(r, "lossless-first");
+  expect(out).toHaveLength(1);
+  expect(out[0].suspectFake).toBe(true);
+  expect(out[0].score).toBeLessThan(1000);
+});
+
+test("sanity check abstains when size is unknown", () => {
+  const r = [resp({ files: [
+    { filename: "nosize.flac", size: 0, bitRate: null, length: 240 },
+  ]})];
+  const out = pickBest(r, "lossless-first");
+  expect(out).toHaveLength(1);
+  expect(out[0].suspectFake).toBe(false);
+});
