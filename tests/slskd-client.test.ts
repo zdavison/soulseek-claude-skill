@@ -5,10 +5,18 @@ const realFetch = globalThis.fetch;
 afterEach(() => { globalThis.fetch = realFetch; });
 
 function mockFetch(routes: Record<string, () => Response>) {
-  globalThis.fetch = mock(async (input: any) => {
+  globalThis.fetch = mock(async (input: any, init?: any) => {
     const url = typeof input === "string" ? input : input.url;
+    const method = (init?.method ?? "GET").toUpperCase();
+    // Prefer "METHOD substring" keys; fall back to plain substring keys.
     for (const key of Object.keys(routes)) {
-      if (url.includes(key)) return routes[key]();
+      const sp = key.indexOf(" ");
+      if (sp > 0 && /^[A-Z]+$/.test(key.slice(0, sp))) {
+        const [m, sub] = [key.slice(0, sp), key.slice(sp + 1)];
+        if (m === method && url.includes(sub)) return routes[key]();
+      } else if (url.includes(key)) {
+        return routes[key]();
+      }
     }
     return new Response("not found", { status: 404 });
   }) as any;
@@ -55,9 +63,10 @@ test("searchAndCollect creates search, polls, returns responses", async () => {
 });
 
 test("enqueue posts files and looks up the transfer id", async () => {
+  let posted = false;
   mockFetch({
-    "/api/v0/downloads/peer/": () => new Response(null, { status: 201 }), // POST enqueue
-    "/api/v0/downloads/peer": () =>
+    "POST /api/v0/downloads/peer": () => { posted = true; return new Response(null, { status: 201 }); },
+    "GET /api/v0/downloads/peer": () =>
       Response.json({
         username: "peer",
         directories: [{ files: [{ id: "tid-1", filename: "Song.flac", size: 100 }] }],
@@ -65,6 +74,7 @@ test("enqueue posts files and looks up the transfer id", async () => {
   });
   const c = new SlskdClient("http://localhost:5030", "k");
   const id = await c.enqueue("peer", "Song.flac", 100);
+  expect(posted).toBe(true);
   expect(id).toBe("tid-1");
 });
 
