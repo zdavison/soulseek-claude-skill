@@ -1,0 +1,20 @@
+[
+  {
+    "username": "alice",
+    "hasFreeUploadSlot": true,
+    "queueLength": 0,
+    "uploadSpeed": 500000,
+    "files": [
+      { "filename": "Artist\\Album\\01 - Song.flac", "size": 28000000, "bitRate": null, "length": 245 }
+    ]
+  },
+  {
+    "username": "bob",
+    "hasFreeUploadSlot": false,
+    "queueLength": 3,
+    "uploadSpeed": 120000,
+    "files": [
+      { "filename": "Music\\Song.mp3", "size": 9800000, "bitRate": 320, "length": 245 }
+    ]
+  }
+]
