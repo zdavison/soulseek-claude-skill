@@ -30,7 +30,10 @@ web:
       claude:
         key: ${o.apiKey}
         role: Administrator
-        cidr: 127.0.0.1/32,::1/128
+        # Permissive CIDR: slskd runs in Docker, so API requests arrive from the
+        # bridge gateway IP (not 127.0.0.1). Network isolation is enforced by the
+        # host port bind (-p 127.0.0.1:PORT:PORT), so only the host can reach the API.
+        cidr: 0.0.0.0/0,::/0
 `;
 }
 

@@ -41,7 +41,8 @@ test("buildSlskdYml embeds creds, api key, downloads dir, port", () => {
   expect(yml).toContain("key: SECRET123456789012");
   expect(yml).toContain("downloads: /downloads");
   expect(yml).toContain("port: 5030");
-  expect(yml).toContain("127.0.0.1/32");
+  // Permissive API-key CIDR is required for Docker bridge networking; host port bind is the isolation.
+  expect(yml).toContain("cidr: 0.0.0.0/0,::/0");
 });
 
 test("buildSlskdYml safely escapes special characters in credentials", () => {
