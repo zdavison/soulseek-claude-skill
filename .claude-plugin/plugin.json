@@ -1,0 +1,8 @@
+{
+  "name": "soulseek",
+  "description": "Search Soulseek and download the highest-quality track via a local slskd instance and MCP server. Run setup.ts to bootstrap slskd and register the MCP.",
+  "version": "0.1.0",
+  "author": {
+    "name": "Zachary Davison"
+  }
+}
