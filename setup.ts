@@ -30,14 +30,14 @@ web:
       claude:
         key: ${o.apiKey}
         role: Administrator
-        cidr: 0.0.0.0/0,::/0
+        cidr: 127.0.0.1/32,::1/128
 `;
 }
 
 export function buildDockerRunArgs(o: { configFile: string; downloadsDir: string; port: number }): string[] {
   return [
     "run", "-d", "--name", "slskd", "--restart", "unless-stopped",
-    "-p", `${o.port}:${o.port}`,
+    "-p", `127.0.0.1:${o.port}:${o.port}`,
     "-v", `${o.configFile}:/app/slskd.yml`,
     "-v", `${o.downloadsDir}:/downloads`,
     "-e", "SLSKD_APP_DIR=/app",
@@ -112,6 +112,25 @@ async function main() {
       const h = await fetch(`${baseUrl}/health`);
       console.log("Health endpoint:", h.ok ? "Healthy" : `HTTP ${h.status}`);
     } catch { console.log("Health endpoint: unreachable"); }
+    // Best-effort: read API key from config file and check Soulseek connection
+    try {
+      const configText = await Bun.file(p.configFile).text();
+      const keyMatch = configText.match(/key:\s*(\S+)/);
+      if (keyMatch) {
+        const storedKey = keyMatch[1];
+        const a = await fetch(`${baseUrl}/api/v0/application`, { headers: { "X-Api-Key": storedKey } });
+        if (a.ok) {
+          const body: any = await a.json();
+          const state: string = body?.server?.state ?? "";
+          const slskConnected = /connected/i.test(state) && !/disconnected/i.test(state);
+          console.log("Soulseek:", slskConnected ? "connected" : "not connected");
+        } else {
+          console.log("Soulseek: unknown");
+        }
+      } else {
+        console.log("Soulseek: unknown");
+      }
+    } catch { console.log("Soulseek: unknown"); }
     return;
   }
 
@@ -162,7 +181,10 @@ async function main() {
   const mcp = await run(["claude", ...buildMcpAddArgs({ repoRoot: p.repoRoot, baseUrl, apiKey })]);
   if (mcp.code !== 0) {
     console.error("claude mcp add failed:", mcp.stderr);
-    console.error("You can register manually with: claude " + buildMcpAddArgs({ repoRoot: p.repoRoot, baseUrl, apiKey }).join(" "));
+    const hint = buildMcpAddArgs({ repoRoot: p.repoRoot, baseUrl, apiKey })
+      .join(" ")
+      .replace(/(SLSKD_API_KEY=)\S+/, "$1***");
+    console.error("You can register manually with: claude " + hint);
     process.exit(1);
   }
 

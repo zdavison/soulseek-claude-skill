@@ -88,3 +88,47 @@ test("transferStatus computes percentComplete", async () => {
   expect(s.phase).toBe("in_progress");
   expect(s.percentComplete).toBe(25);
 });
+
+test("transferStatus falls back to bytesReceived when bytesTransferred is absent", async () => {
+  mockFetch({
+    "/api/v0/downloads/peer/tid-2": () =>
+      Response.json({ id: "tid-2", state: "InProgress", size: 100, bytesReceived: 25, averageSpeed: 10 }),
+  });
+  const c = new SlskdClient("http://localhost:5030", "k");
+  const s = await c.transferStatus("peer", "tid-2");
+  expect(s.phase).toBe("in_progress");
+  expect(s.percentComplete).toBe(25);
+});
+
+test("health returns connected:false for state 'Disconnected'", async () => {
+  mockFetch({
+    "/health": () => new Response("Healthy", { status: 200 }),
+    "/api/v0/application": () =>
+      Response.json({ version: "0.21.0", server: { state: "Disconnected" } }),
+  });
+  const c = new SlskdClient("http://localhost:5030", "k");
+  const h = await c.health();
+  expect(h.healthy).toBe(true);
+  expect(h.connected).toBe(false);
+});
+
+test("enqueue disambiguates by size when multiple files share the same filename", async () => {
+  let posted = false;
+  mockFetch({
+    "POST /api/v0/downloads/peer": () => { posted = true; return new Response(null, { status: 201 }); },
+    "GET /api/v0/downloads/peer": () =>
+      Response.json({
+        username: "peer",
+        directories: [{
+          files: [
+            { id: "tid-wrong", filename: "Song.flac", size: 999, state: "Queued" },
+            { id: "tid-right", filename: "Song.flac", size: 100, state: "Queued" },
+          ],
+        }],
+      }),
+  });
+  const c = new SlskdClient("http://localhost:5030", "k");
+  const id = await c.enqueue("peer", "Song.flac", 100);
+  expect(posted).toBe(true);
+  expect(id).toBe("tid-right");
+});

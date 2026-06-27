@@ -14,6 +14,7 @@ test("buildSlskdYml embeds creds, api key, downloads dir, port", () => {
   expect(yml).toContain("key: SECRET123456789012");
   expect(yml).toContain("downloads: /downloads");
   expect(yml).toContain("port: 5030");
+  expect(yml).toContain("127.0.0.1/32");
 });
 
 test("buildSlskdYml safely escapes special characters in credentials", () => {
@@ -26,7 +27,7 @@ test("buildDockerRunArgs mounts config + downloads and maps port", () => {
   const args = buildDockerRunArgs({ configFile: "/c/slskd.yml", downloadsDir: "/d", port: 5030 });
   const joined = args.join(" ");
   expect(joined).toContain("--name slskd");
-  expect(joined).toContain("-p 5030:5030");
+  expect(joined).toContain("-p 127.0.0.1:5030:5030");
   expect(joined).toContain("/c/slskd.yml:/app/slskd.yml");
   expect(joined).toContain("/d:/downloads");
   expect(joined).toContain("slskd/slskd:latest");
