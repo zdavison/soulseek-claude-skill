@@ -65,8 +65,8 @@ test("searchAndCollect creates search, polls, returns responses", async () => {
 test("enqueue posts files and looks up the transfer id", async () => {
   let posted = false;
   mockFetch({
-    "POST /api/v0/downloads/peer": () => { posted = true; return new Response(null, { status: 201 }); },
-    "GET /api/v0/downloads/peer": () =>
+    "POST /api/v0/transfers/downloads/peer": () => { posted = true; return new Response(null, { status: 201 }); },
+    "GET /api/v0/transfers/downloads/peer": () =>
       Response.json({
         username: "peer",
         directories: [{ files: [{ id: "tid-1", filename: "Song.flac", size: 100 }] }],
@@ -80,7 +80,7 @@ test("enqueue posts files and looks up the transfer id", async () => {
 
 test("transferStatus computes percentComplete", async () => {
   mockFetch({
-    "/api/v0/downloads/peer/tid-1": () =>
+    "/api/v0/transfers/downloads/peer/tid-1": () =>
       Response.json({ id: "tid-1", state: "InProgress", size: 100, bytesTransferred: 25, averageSpeed: 10 }),
   });
   const c = new SlskdClient("http://localhost:5030", "k");
@@ -91,7 +91,7 @@ test("transferStatus computes percentComplete", async () => {
 
 test("transferStatus falls back to bytesReceived when bytesTransferred is absent", async () => {
   mockFetch({
-    "/api/v0/downloads/peer/tid-2": () =>
+    "/api/v0/transfers/downloads/peer/tid-2": () =>
       Response.json({ id: "tid-2", state: "InProgress", size: 100, bytesReceived: 25, averageSpeed: 10 }),
   });
   const c = new SlskdClient("http://localhost:5030", "k");
@@ -115,8 +115,8 @@ test("health returns connected:false for state 'Disconnected'", async () => {
 test("enqueue disambiguates by size when multiple files share the same filename", async () => {
   let posted = false;
   mockFetch({
-    "POST /api/v0/downloads/peer": () => { posted = true; return new Response(null, { status: 201 }); },
-    "GET /api/v0/downloads/peer": () =>
+    "POST /api/v0/transfers/downloads/peer": () => { posted = true; return new Response(null, { status: 201 }); },
+    "GET /api/v0/transfers/downloads/peer": () =>
       Response.json({
         username: "peer",
         directories: [{

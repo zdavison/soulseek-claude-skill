@@ -105,7 +105,7 @@ export class SlskdClient {
   }
 
   async enqueue(username: string, filename: string, size: number): Promise<string> {
-    await this.req(`/api/v0/downloads/${encodeURIComponent(username)}`, {
+    await this.req(`/api/v0/transfers/downloads/${encodeURIComponent(username)}`, {
       method: "POST",
       body: JSON.stringify([{ filename, size }]),
     });
@@ -114,7 +114,7 @@ export class SlskdClient {
     const terminalRe = /succeeded|errored|cancelled|canceled|timedout|rejected/i;
     for (let attempt = 0; attempt < 3; attempt++) {
       if (attempt > 0) await sleep(500);
-      const res = await this.req(`/api/v0/downloads/${encodeURIComponent(username)}`);
+      const res = await this.req(`/api/v0/transfers/downloads/${encodeURIComponent(username)}`);
       if (!res.ok) continue;
       const body: any = await res.json();
       const files = (body?.directories ?? []).flatMap((d: any) => d.files ?? []);
@@ -130,7 +130,7 @@ export class SlskdClient {
   }
 
   async transferStatus(username: string, id: string): Promise<TransferStatus> {
-    const res = await this.req(`/api/v0/downloads/${encodeURIComponent(username)}/${id}`);
+    const res = await this.req(`/api/v0/transfers/downloads/${encodeURIComponent(username)}/${id}`);
     if (!res.ok) throw new Error(`transfer ${id} not found`);
     const t: any = await res.json();
     const size = t.size ?? 0;
@@ -147,7 +147,7 @@ export class SlskdClient {
   }
 
   async cancel(username: string, id: string, remove = true): Promise<void> {
-    await this.req(`/api/v0/downloads/${encodeURIComponent(username)}/${id}?remove=${remove}`, {
+    await this.req(`/api/v0/transfers/downloads/${encodeURIComponent(username)}/${id}?remove=${remove}`, {
       method: "DELETE",
     });
   }
