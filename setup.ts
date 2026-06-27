@@ -57,53 +57,6 @@ export function buildMcpAddArgs(o: { repoRoot: string; baseUrl: string; apiKey: 
   ];
 }
 
-/**
- * Extract Soulseek credentials from a SoulseekQt `soulseek.scd1` config export.
- *
- * The .scd1 format is a little-endian serialized settings store: each setting is a
- * length-prefixed key (`<uint32 keyLen><key bytes>`) followed by a typed value.
- * String values use type code 0x19: `<uint32 0x19><uint32 strLen><strLen bytes>`.
- * The login password is stored as such a string under the key "password".
- *
- * The login username is NOT stored as text in this format (it is held as an integer
- * reference), so `username` is normally null. We still attempt to read it as a string
- * in case a SoulseekQt variant does store it that way.
- */
-export function parseScd1Credentials(buf: Uint8Array): { username: string | null; password: string | null } {
-  const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
-  const u32 = (o: number) => dv.getUint32(o, true);
-
-  // Locate a length-prefixed key (`<uint32 keyLen><keyBytes>`); returns the index just
-  // after the key bytes (the value position), or -1. The length prefix prevents matching
-  // substrings such as "chat_username" or "dont_create_username_folders".
-  function valuePosOf(key: string): number {
-    const kb = new TextEncoder().encode(key);
-    for (let i = 0; i + 4 + kb.length <= buf.length; i++) {
-      if (u32(i) !== kb.length) continue;
-      let match = true;
-      for (let j = 0; j < kb.length; j++) {
-        if (buf[i + 4 + j] !== kb[j]) { match = false; break; }
-      }
-      if (match) return i + 4 + kb.length;
-    }
-    return -1;
-  }
-
-  // Read a string value (type 0x19) at a value position, or null if not a string.
-  function readString(vpos: number): string | null {
-    if (vpos < 0 || vpos + 8 > buf.length) return null;
-    if (u32(vpos) !== 0x19) return null;
-    const len = u32(vpos + 4);
-    if (len <= 0 || len > 4096 || vpos + 8 + len > buf.length) return null;
-    return new TextDecoder().decode(buf.subarray(vpos + 8, vpos + 8 + len));
-  }
-
-  return {
-    username: readString(valuePosOf("username")),
-    password: readString(valuePosOf("password")),
-  };
-}
-
 // --- side-effecting helpers (not unit-tested; covered by manual verification) ---
 
 async function run(cmd: string[]): Promise<{ code: number; stdout: string; stderr: string }> {
@@ -139,7 +92,6 @@ async function waitHealthy(baseUrl: string, apiKey: string, timeoutMs = 60000): 
 
 async function main() {
   const flag = process.argv[2];
-  const scd1Arg = flag && !flag.startsWith("--") ? flag : undefined;
   const home = process.env.HOME!;
   const p = paths(home);
   const port = 5030;
@@ -192,30 +144,12 @@ async function main() {
     process.exit(1);
   }
 
-  // 2. Credentials — read the password from the user's exported SoulseekQt config (soulseek.scd1)
-  console.log("Export: quit SoulseekQt, then copy its `soulseek.scd1` config file (in SoulseekQt's data folder) and pass the path here.");
-  const scd1Path = (scd1Arg ?? process.env.SLSK_SCD1 ?? prompt("Path to your soulseek.scd1 file:") ?? "").replace(/^~/, home);
-  if (!scd1Path) {
-    console.error("A soulseek.scd1 path is required (pass it as an argument, set SLSK_SCD1, or enter when prompted).");
-    process.exit(1);
-  }
-  let scd1Buf: Uint8Array;
-  try {
-    scd1Buf = new Uint8Array(await Bun.file(scd1Path).arrayBuffer());
-  } catch {
-    console.error(`Could not read scd1 file at: ${scd1Path}`);
-    process.exit(1);
-  }
-  const creds = parseScd1Credentials(scd1Buf);
-  const password = creds.password ?? "";
-  if (!password) {
-    console.error("Could not extract a password from that file. Is it a SoulseekQt soulseek.scd1 export?");
-    process.exit(1);
-  }
-  // The .scd1 format does not store the login username as text, so fall back to env/prompt.
-  const username = creds.username ?? process.env.SLSK_USERNAME ?? prompt("Soulseek username (not stored in scd1):") ?? "";
-  if (!username) {
-    console.error("A Soulseek username is required (set SLSK_USERNAME or enter when prompted).");
+  // 2. Credentials
+  const username = process.env.SLSK_USERNAME ?? prompt("Soulseek username:") ?? "";
+  const password = process.env.SLSK_PASSWORD ??
+    (console.warn("(SLSK_PASSWORD not set; input will be visible)"), prompt("Soulseek password:") ?? "");
+  if (!username || !password) {
+    console.error("Username and password are required (set SLSK_USERNAME / SLSK_PASSWORD or enter when prompted).");
     process.exit(1);
   }
 
