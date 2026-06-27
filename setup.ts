@@ -77,7 +77,8 @@ async function waitHealthy(baseUrl: string, apiKey: string, timeoutMs = 60000): 
         const a = await fetch(`${baseUrl}/api/v0/application`, { headers: { "X-Api-Key": apiKey } });
         if (a.ok) {
           const body: any = await a.json();
-          if (/connected/i.test(body?.server?.state ?? "")) return true;
+          const state = body?.server?.state ?? "";
+          if (/connected/i.test(state) && !/disconnected/i.test(state)) return true;
         }
       }
     } catch { /* not up yet */ }
