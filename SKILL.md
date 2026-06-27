@@ -33,7 +33,7 @@ Use the `soulseek_*` MCP tools (backed by a local slskd instance) to find and do
 
 5. **Monitor loop.** Poll `soulseek_transfer_status` with `{ username, transferId }` every ~5–10s:
    - `phase: "succeeded"` → done. Go to step 6.
-   - `phase: "failed"` → stalled/rejected. Cancel is unnecessary (already terminal); go to fallback.
+   - `phase: "failed"` → stalled/rejected. Call `soulseek_cancel` (removes the terminal entry so it can't collide with a later enqueue), then fall back.
    - `phase: "in_progress"` but `bytesTransferred` unchanged across ~6 consecutive polls (~60s) →
      treat as stalled: call `soulseek_cancel`, then fall back.
    - `phase: "queued"` and still queued after ~90s with no progress → `soulseek_cancel` it, then fall back.

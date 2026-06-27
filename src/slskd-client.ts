@@ -47,7 +47,7 @@ export class SlskdClient {
       if (!a.ok) return { healthy, connected: false, version: null };
       const body: any = await a.json();
       const state: string = body?.server?.state ?? "";
-      return { healthy, connected: /connected/i.test(state), version: body?.version ?? null };
+      return { healthy, connected: /connected/i.test(state) && !/disconnected/i.test(state), version: body?.version ?? null };
     } catch {
       return { healthy, connected: false, version: null };
     }
@@ -109,14 +109,24 @@ export class SlskdClient {
       method: "POST",
       body: JSON.stringify([{ filename, size }]),
     });
-    // slskd's enqueue response doesn't include the transfer id; look it up.
-    const res = await this.req(`/api/v0/downloads/${encodeURIComponent(username)}`);
-    if (!res.ok) throw new Error(`enqueue succeeded but could not locate transfer for ${filename}`);
-    const body: any = await res.json();
-    const files = (body?.directories ?? []).flatMap((d: any) => d.files ?? []);
-    const match = files.find((f: any) => f.filename === filename);
-    if (!match?.id) throw new Error(`enqueued file not found in downloads list: ${filename}`);
-    return match.id;
+    // slskd's enqueue response doesn't include the transfer id; look it up with retry
+    // to allow async registration, and disambiguate by matching both filename and size.
+    const terminalRe = /succeeded|errored|cancelled|canceled|timedout|rejected/i;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      if (attempt > 0) await sleep(500);
+      const res = await this.req(`/api/v0/downloads/${encodeURIComponent(username)}`);
+      if (!res.ok) continue;
+      const body: any = await res.json();
+      const files = (body?.directories ?? []).flatMap((d: any) => d.files ?? []);
+      const matches = files.filter((f: any) => f.filename === filename && f.size === size);
+      if (matches.length > 0) {
+        // Prefer a non-terminal entry; fall back to the first match if all are terminal.
+        const active = matches.find((f: any) => !terminalRe.test(f.state ?? ""));
+        const match = active ?? matches[0];
+        if (match?.id) return match.id;
+      }
+    }
+    throw new Error(`enqueued file not found in downloads list: ${filename}`);
   }
 
   async transferStatus(username: string, id: string): Promise<TransferStatus> {
@@ -124,7 +134,7 @@ export class SlskdClient {
     if (!res.ok) throw new Error(`transfer ${id} not found`);
     const t: any = await res.json();
     const size = t.size ?? 0;
-    const bytes = t.bytesTransferred ?? 0;
+    const bytes = t.bytesTransferred ?? t.bytesReceived ?? 0;
     return {
       id: t.id,
       phase: normalizePhase(t.state ?? ""),
