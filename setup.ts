@@ -53,7 +53,7 @@ export function buildMcpAddArgs(o: { repoRoot: string; baseUrl: string; apiKey: 
     "mcp", "add", "soulseek", "-s", "user",
     "-e", `SLSKD_BASE_URL=${o.baseUrl}`,
     "-e", `SLSKD_API_KEY=${o.apiKey}`,
-    "--", "bun", "run", `${o.repoRoot}/src/mcp-server.ts`,
+    "--", "bun", "run", `${o.repoRoot}/dist/mcp-server.js`,
   ];
 }
 
