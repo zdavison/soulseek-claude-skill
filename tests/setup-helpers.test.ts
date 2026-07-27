@@ -40,7 +40,10 @@ test("buildMcpAddArgs wires bun command + env", () => {
   expect(joined).toContain("soulseek");
   expect(joined).toContain("SLSKD_BASE_URL=http://localhost:5030");
   expect(joined).toContain("SLSKD_API_KEY=K");
-  expect(joined).toContain("/r/src/mcp-server.ts");
+  // setup registers the bundled, checked-in MCP server (dist/), so no repo
+  // checkout or bun install is needed — see the "ship self-contained bundled
+  // MCP server (dist/)" change to setup.ts.
+  expect(joined).toContain("/r/dist/mcp-server.js");
 });
 
 test("generateApiKey is long enough for slskd (>=16 chars)", () => {
