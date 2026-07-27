@@ -4,6 +4,7 @@ import { CallToolRequestSchema, ListToolsRequestSchema, type Tool } from "@model
 import { SlskdClient } from "./slskd-client";
 import { pickBest } from "./pick-best";
 import type { Candidate, Policy, TransferStatus } from "./types";
+import { ensureSlskd } from "./ensure-slskd";
 
 type ClientLike = Pick<SlskdClient, "health" | "searchAndCollect" | "enqueue" | "transferStatus" | "cancel">;
 
@@ -107,7 +108,28 @@ function ok(data: unknown) {
   return { content: [{ type: "text", text: JSON.stringify(data, null, 2) }] };
 }
 
-export function createServer(client: ClientLike): Server {
+// Routes a tool call, ensuring slskd is running first. Exported for unit tests.
+export async function dispatchTool(
+  client: ClientLike,
+  ensure: () => Promise<void>,
+  name: string,
+  a: any,
+) {
+  await ensure();
+  switch (name) {
+    case "soulseek_health": return ok(await handleHealth(client));
+    case "soulseek_search": return ok(await handleSearch(client, a as Parameters<typeof handleSearch>[1]));
+    case "soulseek_download": return ok(await handleDownload(client, a as Parameters<typeof handleDownload>[1]));
+    case "soulseek_transfer_status": return ok(await handleStatus(client, a as Parameters<typeof handleStatus>[1]));
+    case "soulseek_cancel": return ok(await handleCancel(client, a as Parameters<typeof handleCancel>[1]));
+    default: throw new Error(`unknown tool: ${name}`);
+  }
+}
+
+export function createServer(
+  client: ClientLike,
+  ensure: () => Promise<void> = () => ensureSlskd(),
+): Server {
   const server = new Server(
     { name: "soulseek", version: "0.1.0" },
     { capabilities: { tools: {} } },
@@ -117,14 +139,7 @@ export function createServer(client: ClientLike): Server {
 
   server.setRequestHandler(CallToolRequestSchema, async (req) => {
     const { name, arguments: a = {} } = req.params;
-    switch (name) {
-      case "soulseek_health": return ok(await handleHealth(client));
-      case "soulseek_search": return ok(await handleSearch(client, a as Parameters<typeof handleSearch>[1]));
-      case "soulseek_download": return ok(await handleDownload(client, a as Parameters<typeof handleDownload>[1]));
-      case "soulseek_transfer_status": return ok(await handleStatus(client, a as Parameters<typeof handleStatus>[1]));
-      case "soulseek_cancel": return ok(await handleCancel(client, a as Parameters<typeof handleCancel>[1]));
-      default: throw new Error(`unknown tool: ${name}`);
-    }
+    return await dispatchTool(client, ensure, name, a);
   });
 
   return server;

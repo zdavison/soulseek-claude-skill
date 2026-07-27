@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { handleSearch, handleDownload, handleStatus, handleCancel, handleHealth } from "../src/mcp-server";
+import { handleSearch, handleDownload, handleStatus, handleCancel, handleHealth, dispatchTool } from "../src/mcp-server";
 
 // Minimal fake client implementing only what each handler uses.
 function fakeClient(over: any = {}) {
@@ -53,4 +53,19 @@ test("handleHealth passes through client.health", async () => {
   const client = fakeClient({ health: async () => ({ healthy: true, connected: true, version: "1.2.3" }) });
   const out = await handleHealth(client);
   expect(out).toEqual({ healthy: true, connected: true, version: "1.2.3" });
+});
+
+test("dispatchTool runs ensure before invoking the tool", async () => {
+  const order: string[] = [];
+  const ensure = async () => { order.push("ensure"); };
+  const client = fakeClient({
+    health: async () => { order.push("health"); return { healthy: true, connected: true, version: "1" }; },
+  });
+  await dispatchTool(client, ensure, "soulseek_health", {});
+  expect(order).toEqual(["ensure", "health"]);
+});
+
+test("dispatchTool throws on an unknown tool", async () => {
+  const ensure = async () => {};
+  await expect(dispatchTool(fakeClient(), ensure, "nope", {})).rejects.toThrow("unknown tool");
 });
