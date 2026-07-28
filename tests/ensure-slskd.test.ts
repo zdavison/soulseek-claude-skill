@@ -19,6 +19,8 @@ function deps(over: Partial<EnsureDeps> = {}) {
     env: { SLSKD_BASE_URL: "http://localhost:5030", SLSKD_API_KEY: "abc123", SLSKD_BINARY: "slskd" },
     fetch: makeFetch([false]),
     spawn: (cmd, env) => { spawned.push({ cmd, env }); },
+    // Hermetic stub: honor SLSKD_BINARY without probing PATH or downloading.
+    resolveBinary: async (env) => env.SLSKD_BINARY ?? "slskd",
     sleep: async () => {},
     now: () => (t += 1000),
   };
@@ -37,6 +39,17 @@ test("spawns slskd with a role-formatted primary key, then resolves when healthy
   expect(spawned.length).toBe(1);
   expect(spawned[0].cmd).toEqual(["slskd"]);
   expect(spawned[0].env.SLSKD_API_KEY).toBe("role=Administrator;cidr=0.0.0.0/0,::/0;abc123");
+});
+
+test("spawns the binary chosen by resolveBinary (e.g. an auto-downloaded path)", async () => {
+  const { d, spawned } = deps({
+    env: { SLSKD_BASE_URL: "http://localhost:5030", SLSKD_API_KEY: "abc123" },
+    fetch: makeFetch([false, true]),
+    resolveBinary: async () => "/home/u/.config/slskd/bin/slskd",
+  });
+  await ensureSlskd(d);
+  expect(spawned.length).toBe(1);
+  expect(spawned[0].cmd).toEqual(["/home/u/.config/slskd/bin/slskd"]);
 });
 
 test("memoizes: concurrent callers spawn slskd exactly once", async () => {

@@ -48,6 +48,7 @@ bun run typecheck # tsc --noEmit
 
 - `setup.ts` — Docker/slskd/MCP bootstrap
 - `src/slskd-client.ts` — typed slskd REST client
+- `src/slskd-binary.ts` — resolve the slskd binary for native launch (PATH first, else auto-download the pinned release)
 - `src/pick-best.ts` — pure quality ranking + fake-lossless sanity checks
 - `src/mcp-server.ts` — MCP server exposing 5 tools
 - `SKILL.md` — the workflow Claude follows
