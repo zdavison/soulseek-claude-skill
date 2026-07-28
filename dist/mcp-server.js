@@ -4,25 +4,43 @@ var __getProtoOf = Object.getPrototypeOf;
 var __defProp = Object.defineProperty;
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __hasOwnProp = Object.prototype.hasOwnProperty;
+function __accessProp(key) {
+  return this[key];
+}
+var __toESMCache_node;
+var __toESMCache_esm;
 var __toESM = (mod, isNodeMode, target) => {
+  var canCache = mod != null && typeof mod === "object";
+  if (canCache) {
+    var cache = isNodeMode ? __toESMCache_node ??= new WeakMap : __toESMCache_esm ??= new WeakMap;
+    var cached = cache.get(mod);
+    if (cached)
+      return cached;
+  }
   target = mod != null ? __create(__getProtoOf(mod)) : {};
   const to = isNodeMode || !mod || !mod.__esModule ? __defProp(target, "default", { value: mod, enumerable: true }) : target;
   for (let key of __getOwnPropNames(mod))
     if (!__hasOwnProp.call(to, key))
       __defProp(to, key, {
-        get: () => mod[key],
+        get: __accessProp.bind(mod, key),
         enumerable: true
       });
+  if (canCache)
+    cache.set(mod, to);
   return to;
 };
 var __commonJS = (cb, mod) => () => (mod || cb((mod = { exports: {} }).exports, mod), mod.exports);
+var __returnValue = (v) => v;
+function __exportSetter(name, newValue) {
+  this[name] = __returnValue.bind(null, newValue);
+}
 var __export = (target, all) => {
   for (var name in all)
     __defProp(target, name, {
       get: all[name],
       enumerable: true,
       configurable: true,
-      set: (newValue) => all[name] = () => newValue
+      set: __exportSetter.bind(all, name)
     });
 };
 
@@ -10328,7 +10346,7 @@ function finalize(ctx, schema) {
     result.$schema = "http://json-schema.org/draft-07/schema#";
   } else if (ctx.target === "draft-04") {
     result.$schema = "http://json-schema.org/draft-04/schema#";
-  } else if (ctx.target === "openapi-3.0") {} else {}
+  } else if (ctx.target === "openapi-3.0") {}
   if (ctx.external?.uri) {
     const id = ctx.external.registry.get(schema)?.id;
     if (!id)
@@ -10546,7 +10564,7 @@ var literalProcessor = (schema, ctx, json, _params) => {
     if (val === undefined) {
       if (ctx.unrepresentable === "throw") {
         throw new Error("Literal `undefined` cannot be represented in JSON Schema");
-      } else {}
+      }
     } else if (typeof val === "bigint") {
       if (ctx.unrepresentable === "throw") {
         throw new Error("BigInt literals cannot be represented in JSON Schema");
@@ -14308,6 +14326,162 @@ function pickBest(responses, policy) {
   return filtered.sort((a, b) => b.score - a.score);
 }
 
+// src/slskd-binary.ts
+var SLSKD_VERSION = process.env.SLSKD_VERSION ?? "0.26.0";
+var SLSKD_OS = { darwin: "osx", linux: "linux", win32: "win" };
+var SLSKD_ARCH = { x64: "x64", arm64: "arm64", arm: "arm" };
+function slskdAssetName(o) {
+  const os = SLSKD_OS[o.platform];
+  const arch = SLSKD_ARCH[o.arch];
+  if (!os)
+    throw new Error(`Unsupported platform for slskd: ${o.platform}`);
+  if (!arch)
+    throw new Error(`Unsupported arch for slskd: ${o.arch}`);
+  const token = os === "linux" && o.musl ? `linux-musl-${arch}` : `${os}-${arch}`;
+  return `slskd-${o.version}-${token}.zip`;
+}
+function slskdDownloadUrl(o) {
+  return `https://github.com/slskd/slskd/releases/download/${o.version}/${o.asset}`;
+}
+async function resolveSlskdBinary(d) {
+  const override = d.env.SLSKD_BINARY;
+  if (override)
+    return override;
+  const onPath = await d.which("slskd");
+  if (onPath)
+    return onPath;
+  const binaryPath = `${d.binDir}/slskd`;
+  if (await d.exists(binaryPath))
+    return binaryPath;
+  const musl = await d.isMusl();
+  const asset = slskdAssetName({ version: d.version, platform: d.platform, arch: d.arch, musl });
+  const url = slskdDownloadUrl({ version: d.version, asset });
+  await d.download({ url, asset, binDir: d.binDir, binaryPath });
+  return binaryPath;
+}
+async function run(cmd) {
+  const proc = Bun.spawn(cmd, { stdout: "pipe", stderr: "ignore", stdin: "ignore" });
+  const stdout = await new Response(proc.stdout).text();
+  const code = await proc.exited;
+  return { code, stdout };
+}
+async function whichOnPath(name) {
+  try {
+    const r = await run(["which", name]);
+    const p = r.stdout.trim();
+    return r.code === 0 && p ? p : null;
+  } catch {
+    return null;
+  }
+}
+async function detectMusl() {
+  if (process.platform !== "linux")
+    return false;
+  if (await Bun.file("/etc/alpine-release").exists())
+    return true;
+  try {
+    const proc = Bun.spawn(["ldd", "--version"], { stdout: "pipe", stderr: "pipe", stdin: "ignore" });
+    const out = await new Response(proc.stdout).text() + await new Response(proc.stderr).text();
+    await proc.exited;
+    return /musl/i.test(out);
+  } catch {
+    return false;
+  }
+}
+async function downloadAndExtract(o) {
+  await Bun.$`mkdir -p ${o.binDir}`.quiet();
+  const zipPath = `${o.binDir}/${o.asset}`;
+  const res = await fetch(o.url);
+  if (!res.ok)
+    throw new Error(`download failed (${o.url}): HTTP ${res.status}`);
+  await Bun.write(zipPath, await res.arrayBuffer());
+  const unzip = Bun.spawn(["unzip", "-o", zipPath, "-d", o.binDir], { stdout: "ignore", stderr: "pipe", stdin: "ignore" });
+  if (await unzip.exited !== 0) {
+    const err = await new Response(unzip.stderr).text();
+    throw new Error(`unzip failed (is 'unzip' installed?): ${err.trim()}`);
+  }
+  await Bun.$`chmod +x ${o.binaryPath}`.quiet();
+  if (!await Bun.file(o.binaryPath).exists()) {
+    throw new Error(`slskd binary not found at ${o.binaryPath} after extracting ${o.asset}`);
+  }
+}
+function defaultBinaryResolveDeps(env = process.env) {
+  const home = env.HOME ?? "";
+  return {
+    env,
+    which: whichOnPath,
+    exists: (p) => Bun.file(p).exists(),
+    download: downloadAndExtract,
+    platform: process.platform,
+    arch: process.arch,
+    isMusl: detectMusl,
+    binDir: `${home}/.config/slskd/bin`,
+    version: SLSKD_VERSION
+  };
+}
+function resolveSlskdBinaryDefault(env = process.env) {
+  return resolveSlskdBinary(defaultBinaryResolveDeps(env));
+}
+
+// src/ensure-slskd.ts
+var HEALTH_TIMEOUT_MS = 60000;
+var POLL_MS = 1000;
+var defaultDeps = {
+  env: process.env,
+  fetch: (url) => fetch(url),
+  spawn: (cmd, env) => {
+    Bun.spawn(cmd, { env, stdout: "ignore", stderr: "ignore", stdin: "ignore" });
+  },
+  resolveBinary: (env) => resolveSlskdBinaryDefault(env),
+  sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
+  now: () => Date.now()
+};
+var readiness = null;
+function ensureSlskd(deps = {}) {
+  const d = { ...defaultDeps, ...deps };
+  if (!readiness) {
+    readiness = launch(d).catch((err) => {
+      readiness = null;
+      throw err;
+    });
+  }
+  return readiness;
+}
+async function isHealthy(d, baseUrl) {
+  try {
+    const res = await d.fetch(`${baseUrl}/health`);
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+async function launch(d) {
+  const baseUrl = (d.env.SLSKD_BASE_URL ?? "http://localhost:5030").replace(/\/$/, "");
+  if (await isHealthy(d, baseUrl))
+    return;
+  const bareKey = d.env.SLSKD_API_KEY;
+  if (!bareKey)
+    throw new Error("SLSKD_API_KEY is required to launch slskd");
+  const binary = await d.resolveBinary(d.env);
+  const childEnv = stringEnv(d.env);
+  childEnv.SLSKD_API_KEY = `role=Administrator;cidr=0.0.0.0/0,::/0;${bareKey}`;
+  d.spawn([binary], childEnv);
+  const deadline = d.now() + HEALTH_TIMEOUT_MS;
+  while (d.now() < deadline) {
+    await d.sleep(POLL_MS);
+    if (await isHealthy(d, baseUrl))
+      return;
+  }
+  throw new Error("slskd did not become healthy within 60s");
+}
+function stringEnv(env) {
+  const out = {};
+  for (const [k, v] of Object.entries(env))
+    if (v !== undefined)
+      out[k] = v;
+  return out;
+}
+
 // src/mcp-server.ts
 async function handleHealth(client) {
   return await client.health();
@@ -14385,25 +14559,29 @@ var TOOLS = [
 function ok(data) {
   return { content: [{ type: "text", text: JSON.stringify(data, null, 2) }] };
 }
-function createServer(client) {
+async function dispatchTool(client, ensure, name, a) {
+  await ensure();
+  switch (name) {
+    case "soulseek_health":
+      return ok(await handleHealth(client));
+    case "soulseek_search":
+      return ok(await handleSearch(client, a));
+    case "soulseek_download":
+      return ok(await handleDownload(client, a));
+    case "soulseek_transfer_status":
+      return ok(await handleStatus(client, a));
+    case "soulseek_cancel":
+      return ok(await handleCancel(client, a));
+    default:
+      throw new Error(`unknown tool: ${name}`);
+  }
+}
+function createServer(client, ensure = () => ensureSlskd()) {
   const server = new Server({ name: "soulseek", version: "0.1.0" }, { capabilities: { tools: {} } });
   server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: TOOLS }));
   server.setRequestHandler(CallToolRequestSchema, async (req) => {
     const { name, arguments: a = {} } = req.params;
-    switch (name) {
-      case "soulseek_health":
-        return ok(await handleHealth(client));
-      case "soulseek_search":
-        return ok(await handleSearch(client, a));
-      case "soulseek_download":
-        return ok(await handleDownload(client, a));
-      case "soulseek_transfer_status":
-        return ok(await handleStatus(client, a));
-      case "soulseek_cancel":
-        return ok(await handleCancel(client, a));
-      default:
-        throw new Error(`unknown tool: ${name}`);
-    }
+    return await dispatchTool(client, ensure, name, a);
   });
   return server;
 }
@@ -14424,5 +14602,6 @@ export {
   handleHealth,
   handleDownload,
   handleCancel,
+  dispatchTool,
   createServer
 };
