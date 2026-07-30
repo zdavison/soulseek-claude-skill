@@ -5,10 +5,17 @@
 
 import { resolveSlskdBinaryDefault } from "./slskd-binary";
 
+// A detachable handle over the spawned child — just enough of Bun.Subprocess for
+// the launcher to unref() it. Returning this (rather than void) keeps the detach
+// decision in the injectable, unit-testable code path.
+export interface SpawnedProcess {
+  unref: () => void;
+}
+
 export interface EnsureDeps {
   env: Record<string, string | undefined>;
   fetch: (url: string) => Promise<{ ok: boolean }>;
-  spawn: (cmd: string[], env: Record<string, string>) => void;
+  spawn: (cmd: string[], env: Record<string, string>) => SpawnedProcess;
   // Resolves a runnable slskd binary path: SLSKD_BINARY override, else a slskd
   // on PATH, else a cached/auto-downloaded release (see slskd-binary.ts). This
   // is what lets the native launch work in a sandbox with no slskd preinstalled.
@@ -23,9 +30,8 @@ const POLL_MS = 1_000;
 const defaultDeps: EnsureDeps = {
   env: process.env,
   fetch: (url) => fetch(url),
-  spawn: (cmd, env) => {
-    Bun.spawn(cmd, { env, stdout: "ignore", stderr: "ignore", stdin: "ignore" });
-  },
+  spawn: (cmd, env) =>
+    Bun.spawn(cmd, { env, stdout: "ignore", stderr: "ignore", stdin: "ignore" }),
   resolveBinary: (env) => resolveSlskdBinaryDefault(env),
   sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
   now: () => Date.now(),
@@ -67,7 +73,12 @@ async function launch(d: EnsureDeps): Promise<void> {
 
   const childEnv = stringEnv(d.env);
   childEnv.SLSKD_API_KEY = `role=Administrator;cidr=0.0.0.0/0,::/0;${bareKey}`;
-  d.spawn([binary], childEnv);
+  // slskd is a long-lived daemon meant to outlive this short-lived CLI process.
+  // Detach it so bun's event loop doesn't stay alive waiting on the child —
+  // otherwise `bun cli.ts search` prints its JSON result then hangs until an
+  // external timeout kills it, which reads as "soulseek search is really slow".
+  const child = d.spawn([binary], childEnv);
+  child.unref();
 
   const deadline = d.now() + HEALTH_TIMEOUT_MS;
   while (d.now() < deadline) {

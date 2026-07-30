@@ -13,12 +13,16 @@ function makeFetch(oks: boolean[]) {
 }
 
 function deps(over: Partial<EnsureDeps> = {}) {
-  const spawned: Array<{ cmd: string[]; env: Record<string, string> }> = [];
+  const spawned: Array<{ cmd: string[]; env: Record<string, string>; unrefs: number }> = [];
   let t = 0;
   const base: EnsureDeps = {
     env: { SLSKD_BASE_URL: "http://localhost:5030", SLSKD_API_KEY: "abc123", SLSKD_BINARY: "slskd" },
     fetch: makeFetch([false]),
-    spawn: (cmd, env) => { spawned.push({ cmd, env }); },
+    spawn: (cmd, env) => {
+      const rec = { cmd, env, unrefs: 0 };
+      spawned.push(rec);
+      return { unref: () => { rec.unrefs++; } };
+    },
     // Hermetic stub: honor SLSKD_BINARY without probing PATH or downloading.
     resolveBinary: async (env) => env.SLSKD_BINARY ?? "slskd",
     sleep: async () => {},
@@ -39,6 +43,17 @@ test("spawns slskd with a role-formatted primary key, then resolves when healthy
   expect(spawned.length).toBe(1);
   expect(spawned[0].cmd).toEqual(["slskd"]);
   expect(spawned[0].env.SLSKD_API_KEY).toBe("role=Administrator;cidr=0.0.0.0/0,::/0;abc123");
+});
+
+test("detaches (unref) the spawned slskd so the short-lived CLI can exit", async () => {
+  // Regression: slskd is a long-lived daemon. If the CLI keeps the child
+  // referenced, bun won't exit after printing results — `search` prints its
+  // JSON in ~8s, then hangs until an external timeout kills it. The launcher
+  // must unref the child exactly once.
+  const { d, spawned } = deps({ fetch: makeFetch([false, true]) });
+  await ensureSlskd(d);
+  expect(spawned.length).toBe(1);
+  expect(spawned[0].unrefs).toBe(1);
 });
 
 test("spawns the binary chosen by resolveBinary (e.g. an auto-downloaded path)", async () => {
