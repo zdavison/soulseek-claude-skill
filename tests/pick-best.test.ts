@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { classifyFormat, pickBest } from "../src/pick-best";
+import { classifyFormat, pickBest, rankCandidates, DEFAULT_SEARCH_LIMIT } from "../src/pick-best";
 import type { SlskdSearchResponse } from "../src/types";
 
 function resp(over: Partial<SlskdSearchResponse> & { files: any[] }): SlskdSearchResponse {
@@ -36,7 +36,7 @@ test("sanity check abstains when length is unknown", () => {
   const r = [resp({ files: [
     { filename: "unknown.flac", size: 3_000_000, bitRate: null, length: null },
   ]})];
-  const out = pickBest(r, "lossless-first");
+  const out = rankCandidates(r, "lossless-first");
   expect(out).toHaveLength(1);
   expect(out[0].suspectFake).toBe(false);
 });
@@ -75,7 +75,7 @@ test("soft-floor lossless is kept but flagged suspectFake and penalized", () => 
   const r = [resp({ files: [
     { filename: "suspect.flac", size: 10_500_000, bitRate: null, length: 240 }, // ~350 kbps
   ]})];
-  const out = pickBest(r, "lossless-first");
+  const out = rankCandidates(r, "lossless-first");
   expect(out).toHaveLength(1);
   expect(out[0].suspectFake).toBe(true);
   expect(out[0].score).toBeLessThan(1000);
@@ -85,7 +85,29 @@ test("sanity check abstains when size is unknown", () => {
   const r = [resp({ files: [
     { filename: "nosize.flac", size: 0, bitRate: null, length: 240 },
   ]})];
-  const out = pickBest(r, "lossless-first");
+  const out = rankCandidates(r, "lossless-first");
   expect(out).toHaveLength(1);
   expect(out[0].suspectFake).toBe(false);
+});
+
+test("pickBest caps output at DEFAULT_SEARCH_LIMIT and projects the lean shape", () => {
+  const files = Array.from({ length: 20 }, (_, i) => ({
+    filename: `t${i}.flac`, size: 27_000_000 + i, bitRate: null, length: 240,
+  }));
+  const out = pickBest([resp({ files })], "lossless-first");
+  expect(DEFAULT_SEARCH_LIMIT).toBe(8);
+  expect(out).toHaveLength(8);
+  expect(Object.keys(out[0]).sort()).toEqual(
+    ["bitRate", "filename", "format", "reason", "size", "username"],
+  );
+});
+
+test("rankCandidates is uncapped and retains ranking-internal fields", () => {
+  const files = Array.from({ length: 20 }, (_, i) => ({
+    filename: `t${i}.flac`, size: 27_000_000 + i, bitRate: null, length: 240,
+  }));
+  const out = rankCandidates([resp({ files })], "lossless-first");
+  expect(out).toHaveLength(20);
+  expect(out[0]).toHaveProperty("score");
+  expect(out[0]).toHaveProperty("suspectFake");
 });

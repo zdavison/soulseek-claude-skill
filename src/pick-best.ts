@@ -1,6 +1,10 @@
-import type { Candidate, Format, Policy, SlskdFile, SlskdSearchResponse } from "./types";
+import type { Candidate, Format, Policy, RankedCandidate, SlskdFile, SlskdSearchResponse } from "./types";
 
 const LOSSLESS: ReadonlySet<Format> = new Set(["flac", "wav", "alac", "ape"]);
+
+// Cap on emitted candidates: the top N after ranking. Keeps the context the model
+// reads small while leaving enough depth for the fallback loop.
+export const DEFAULT_SEARCH_LIMIT = 8;
 
 // Confident floor: below this implied bitrate a "lossless" file cannot be genuine -> drop.
 const LOSSLESS_HARD_FLOOR_KBPS = 250;
@@ -47,7 +51,7 @@ function tierScore(format: Format, file: SlskdFile): number {
   return 100;
 }
 
-interface Evaluated { candidate: Candidate; drop: boolean; }
+interface Evaluated { candidate: RankedCandidate; drop: boolean; }
 
 function evaluate(file: SlskdFile, r: SlskdSearchResponse): Evaluated {
   const format = classifyFormat(file.filename);
@@ -83,7 +87,7 @@ function evaluate(file: SlskdFile, r: SlskdSearchResponse): Evaluated {
   score += Math.min(r.uploadSpeed / 100_000, 10);         // up to +10 for fast peers
   score += file.size / 1e12;                              // tiny tiebreaker: larger wins
 
-  const candidate: Candidate = {
+  const candidate: RankedCandidate = {
     username: r.username,
     filename: file.filename,
     size: file.size,
@@ -101,7 +105,10 @@ function evaluate(file: SlskdFile, r: SlskdSearchResponse): Evaluated {
   return { candidate, drop };
 }
 
-export function pickBest(responses: SlskdSearchResponse[], policy: Policy): Candidate[] {
+// Full ranking: evaluate every file, drop fakes, apply the policy filter, sort
+// best-first. Returns the complete RankedCandidate shape (no cap) — the ranking
+// signals stay available internally and to tests.
+export function rankCandidates(responses: SlskdSearchResponse[], policy: Policy): RankedCandidate[] {
   const evaluated = responses
     .flatMap((r) => r.files.map((f) => evaluate(f, r)))
     .filter((e) => !e.drop)
@@ -112,4 +119,25 @@ export function pickBest(responses: SlskdSearchResponse[], policy: Policy): Cand
     : evaluated;
 
   return filtered.sort((a, b) => b.score - a.score);
+}
+
+// Project a ranked candidate down to the emitted, token-lean shape.
+function project(c: RankedCandidate): Candidate {
+  return {
+    username: c.username,
+    filename: c.filename,
+    size: c.size,
+    format: c.format,
+    bitRate: c.bitRate,
+    reason: c.reason,
+  };
+}
+
+// The emitted top-N candidates: rank, cap, and project to the lean shape.
+export function pickBest(
+  responses: SlskdSearchResponse[],
+  policy: Policy,
+  limit: number = DEFAULT_SEARCH_LIMIT,
+): Candidate[] {
+  return rankCandidates(responses, policy).slice(0, limit).map(project);
 }

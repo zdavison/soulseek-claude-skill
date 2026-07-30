@@ -14,6 +14,7 @@
 import { SlskdClient } from "./slskd-client";
 import { pickBest } from "./pick-best";
 import { ensureSlskd } from "./ensure-slskd";
+import { toon } from "./toon";
 import type { Policy } from "./types";
 
 // The slskd surface the CLI needs — mirrors the client, injectable for tests.
@@ -27,6 +28,7 @@ export interface CliDeps {
   ensure: () => Promise<void>;
   readStdin: () => Promise<string>;
   write: (data: unknown) => void;
+  writeRaw: (text: string) => void;   // raw stdout, no JSON encoding (for `toon`)
   fail: (msg: string) => never;
 }
 
@@ -86,6 +88,18 @@ export async function runCli(argv: string[], d: CliDeps): Promise<void> {
       return;
     }
 
+    // Presentation-only: render JSON from stdin as a compact TOON table for the
+    // model to read. Pure formatting — no slskd, so no ensure(). The CLI still
+    // emits JSON everywhere else; this is the last-moment view conversion.
+    case "toon": {
+      const text = await d.readStdin();
+      if (!text.trim()) d.fail("toon reads JSON on stdin");
+      let parsed: unknown;
+      try { parsed = JSON.parse(text); } catch { d.fail("stdin is not valid JSON"); }
+      d.writeRaw(toon(parsed));
+      return;
+    }
+
     // Cancel + remove a stalled/rejected transfer before falling back.
     case "cancel": {
       if (!a.username || !a.transferId) d.fail("--username and --transferId are required");
@@ -103,6 +117,7 @@ export async function runCli(argv: string[], d: CliDeps): Promise<void> {
         "  download   (reads {username,filename,size} JSON on stdin)\n" +
         "  status   --username <u> --transferId <id>\n" +
         "  cancel   --username <u> --transferId <id>\n" +
+        "  toon     (reads JSON on stdin, prints a compact TOON table for reading)\n" +
         (cmd ? `unknown command: ${cmd}` : ""),
       );
   }
@@ -113,16 +128,19 @@ if (import.meta.main) {
   const fail = (msg: string): never => { process.stderr.write(msg + "\n"); process.exit(1); };
   const baseUrl = process.env.SLSKD_BASE_URL ?? "http://localhost:5030";
   const apiKey = process.env.SLSKD_API_KEY;
-  if (!apiKey) {
+  // `toon` is pure formatting — it never touches slskd, so don't demand creds for it.
+  const cmd = process.argv[2];
+  if (!apiKey && cmd !== "toon") {
     process.stderr.write("SLSKD_API_KEY is required\n");
     process.exit(1);
   }
-  const client = new SlskdClient(baseUrl, apiKey);
+  const client = new SlskdClient(baseUrl, apiKey ?? "");
   await runCli(process.argv.slice(2), {
     client,
     ensure: () => ensureSlskd(),
     readStdin: () => new Response(Bun.stdin.stream()).text(),
     write: (data) => process.stdout.write(JSON.stringify(data) + "\n"),
+    writeRaw: (text) => process.stdout.write(text.endsWith("\n") ? text : text + "\n"),
     fail,
   });
 }

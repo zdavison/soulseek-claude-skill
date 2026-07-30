@@ -23,8 +23,9 @@ export interface SlskdSearchResponse {
   files: SlskdFile[];
 }
 
-// A ranked download candidate (output of pick-best).
-export interface Candidate {
+// A fully-evaluated candidate used internally for ranking. All the signals the
+// ranker computes live here; only a projected subset (Candidate) is emitted.
+export interface RankedCandidate {
   username: string;
   filename: string;
   size: number;
@@ -38,6 +39,18 @@ export interface Candidate {
   score: number;       // higher = better; for ranking
   reason: string;      // human-readable explanation of the ranking
   suspectFake: boolean;// soft-suspect lossless (kept but penalized)
+}
+
+// The emitted download candidate — a token-lean projection of RankedCandidate.
+// username/filename/size are the download contract (read back on stdin); format,
+// bitRate and reason are what the model needs to explain its pick.
+export interface Candidate {
+  username: string;
+  filename: string;
+  size: number;
+  format: Format;
+  bitRate: number | null;
+  reason: string;
 }
 
 // Normalized transfer state (from slskd's flags string).

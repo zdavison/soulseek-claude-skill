@@ -11,5 +11,8 @@
   "devDependencies": {
     "typescript": "^5.4.0",
     "@types/bun": "latest"
+  },
+  "dependencies": {
+    "@toon-format/toon": "^4.1.0"
   }
 }
