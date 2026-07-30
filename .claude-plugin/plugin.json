@@ -1,6 +1,6 @@
 {
   "name": "soulseek",
-  "description": "Search Soulseek and download the highest-quality track via a local slskd instance and MCP server. Run setup.ts to bootstrap slskd and register the MCP.",
+  "description": "Search Soulseek and download the highest-quality track via a local slskd instance, driven directly over its REST API (a small bun CLI, no MCP server). slskd is lazy-launched on first use.",
   "version": "0.1.0",
   "author": {
     "name": "Zachary Davison"
